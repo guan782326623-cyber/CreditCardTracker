@@ -1,0 +1,1818 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>信用卡追踪</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Roboto, sans-serif; }
+        .fade-in  { animation: fadeIn .35s ease-in; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes spin   { to { transform:rotate(360deg); } }
+        .spin { animation: spin 1s linear infinite; }
+        ::-webkit-scrollbar { height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius:4px; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const API = '/api';
+
+// ── Inline SVG icons ───────────────────────────────────────────────
+const ICONS = {
+    'credit-card':  '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
+    'dollar-sign':  '<line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+    'calendar':     '<rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>',
+    'chevron-up':   '<path d="m18 15-6-6-6 6"/>',
+    'chevron-down': '<path d="m6 9 6 6 6-6"/>',
+    'loader':       '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+    'check-circle': '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+    'x-circle':     '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+    'info':         '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+    'trash-2':      '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+    'user-plus':    '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
+    'user':         '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    'x':            '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    'pencil':       '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+    'plus':         '<path d="M5 12h14"/><path d="M12 5v14"/>',
+    'globe':        '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+    'upload':       '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+    'sparkles':     '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>',
+    'link':         '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    'settings':     '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+};
+
+const Icon = ({ name, size = 16, className = '' }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        className={className} dangerouslySetInnerHTML={{ __html: ICONS[name] || '' }}
+    />
+);
+
+// ── App Logo ────────────────────────────────────────────────────────
+const AppLogo = ({ size = 40 }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 48 48">
+        <defs>
+            <linearGradient id="lgBack" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#818cf8"/>
+                <stop offset="100%" stopColor="#7c3aed"/>
+            </linearGradient>
+            <linearGradient id="lgFront" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#3b82f6"/>
+                <stop offset="100%" stopColor="#6366f1"/>
+            </linearGradient>
+        </defs>
+        {/* Back card */}
+        <rect x="11" y="5" width="32" height="21" rx="3.5" fill="url(#lgBack)"/>
+        {/* Front card */}
+        <rect x="5" y="12" width="32" height="21" rx="3.5" fill="url(#lgFront)"/>
+        {/* Magnetic stripe */}
+        <rect x="5" y="16" width="32" height="5" fill="rgba(0,0,0,0.18)"/>
+        {/* Chip */}
+        <rect x="11" y="25" width="8" height="5" rx="1" fill="rgba(255,255,255,0.75)"/>
+        {/* Check badge */}
+        <circle cx="40" cy="40" r="7.5" fill="#10b981"/>
+        <polyline points="36,40 38.5,42.5 44,37" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    </svg>
+);
+
+// ── Translations ───────────────────────────────────────────────────
+const T = {
+    zh: {
+        appTitle: '信用卡追踪',
+        welcome: '欢迎使用',
+        createUserPrompt: '请先创建一个用户',
+        usernamePlaceholder: '输入用户名',
+        create: '创建',
+        addUser: '添加用户',
+        loading: '正在加载数据…',
+        recouped: '已回血',
+        effective: '等效年费',
+        annualFee: '年费',
+        resetCard: '重置此卡数据',
+        autoSave: '数据自动保存',
+        autoSaveLocal: '至本地数据库',
+        saving: '保存中…',
+        saved: '已保存',
+        saveFailed: '保存失败',
+        confirmDeleteUser: (name) => `确定删除用户 "${name}" 及其所有数据？`,
+        keepOneUser: '至少需要保留一个用户',
+        confirmReset: (user, card) => `确定清空 ${user} 的 ${card} 所有数据？`,
+        total: '总额',
+        resetPeriodLabel: '',
+        toggleDone: (amt) => `✓ 已报销 $${amt}`,
+        toggleNotDone: '点击标记为已报销',
+        firstHalf: '上半年 (Jan–Jun)',
+        secondHalf: '下半年 (Jul–Dec)',
+        q1: 'Q1 (Jan–Mar)',
+        q2: 'Q2 (Apr–Jun)',
+        q3: 'Q3 (Jul–Sep)',
+        q4: 'Q4 (Oct–Dec)',
+        monthLabel: (m) => `${m}月`,
+        addCard: '添加卡片',
+        manageCards: '管理卡片',
+        removeCard: '移除',
+        noCards: '没有卡片，点击右上角添加',
+        editName: '编辑名称',
+        saveName: '保存',
+        cancelEdit: '取消',
+        userAlreadyExists: '用户名已存在',
+        cardAlreadyAdded: '该卡片已添加',
+        uploadStatement: '上传账单',
+        scanning: '正在分析账单…',
+        scanResultTitle: '账单扫描结果',
+        detectedCard: '识别到的卡片',
+        detectedUser: '识别到的用户',
+        detectedBenefits: '发现以下福利被触发',
+        noBenefitsFound: '未发现可匹配的福利记录',
+        cardNotDetected: '无法识别卡片类型',
+        alreadyRecorded: '已记录',
+        newlyApplied: '新增',
+        scanError: '账单解析失败',
+        close: '关闭',
+        monthNames: ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],
+        userNotMatched: '未能自动匹配用户，数据未更新',
+        scanSuccess: (n) => `已自动更新 ${n} 条福利记录`,
+        bulkScanTitle: (n) => `批量账单扫描结果（${n} 份）`,
+        newUserHint: '账单中检测到持卡人',
+        createUserAndApply: '创建用户并记录福利',
+        scanningOf: (done, total) => `正在分析账单 ${done}/${total}…`,
+        addCustomCard:    '从网址添加新卡',
+        enterCardUrl:     '输入信用卡介绍页网址',
+        urlPlaceholder:   'https://...',
+        analyzeCard:      '分析',
+        analyzingCard:    '正在抓取分析…',
+        scrapeError:      '抓取失败，请检查网址',
+        reviewCardTitle:  '确认卡片信息',
+        cardNameEn:       '卡片名称 (英文)',
+        cardNameZh:       '卡片名称 (中文)',
+        annualFeeLabel:   '年费 ($)',
+        cardColor:        '卡片颜色',
+        benefitsList:     '福利列表',
+        benefitNameEn:    '福利名称 (英文)',
+        benefitNameZh:    '福利名称 (中文)',
+        benefitType:      '类型',
+        benefitAmount:    '金额',
+        benefitAmountMo:  '每月金额',
+        benefitDescEn:    '说明 (英文)',
+        benefitDescZh:    '说明 (中文)',
+        addBenefit:       '添加福利',
+        saveCard:         '保存卡片',
+        cardSaved:        '卡片已添加！',
+        typeLabels: {
+            annual: '每年 (Annual)', monthly: '每月 (Monthly)',
+            monthly_uber: '每月变额 (Uber-style)', 'semi-annual': '每半年 (Semi-annual)',
+            quarterly: '每季度 (Quarterly)', toggle: '开关/一次性 (Toggle)',
+        },
+        colorLabels: ['深灰','深蓝','靛蓝','紫','红','绿','金','玫红','青'],
+    },
+    en: {
+        appTitle: 'Card Tracker',
+        welcome: 'Welcome',
+        createUserPrompt: 'Please create a user to get started',
+        usernamePlaceholder: 'Enter username',
+        create: 'Create',
+        addUser: 'Add User',
+        loading: 'Loading data…',
+        recouped: 'Recouped',
+        effective: 'Effective Fee',
+        annualFee: 'Annual Fee',
+        resetCard: 'Reset Card Data',
+        autoSave: 'Data auto-saved',
+        autoSaveLocal: 'to local database',
+        saving: 'Saving…',
+        saved: 'Saved',
+        saveFailed: 'Save failed',
+        confirmDeleteUser: (name) => `Delete user "${name}" and all their data?`,
+        keepOneUser: 'At least one user must remain',
+        confirmReset: (user, card) => `Reset all ${card} data for ${user}?`,
+        total: 'Total',
+        resetPeriodLabel: '',
+        toggleDone: (amt) => `✓ Reimbursed $${amt}`,
+        toggleNotDone: 'Click to mark as reimbursed',
+        firstHalf: 'Jan–Jun',
+        secondHalf: 'Jul–Dec',
+        q1: 'Q1 (Jan–Mar)',
+        q2: 'Q2 (Apr–Jun)',
+        q3: 'Q3 (Jul–Sep)',
+        q4: 'Q4 (Oct–Dec)',
+        monthLabel: (m) => {
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return months[m - 1];
+        },
+        addCard: 'Add Card',
+        manageCards: 'Manage Cards',
+        removeCard: 'Remove',
+        noCards: 'No cards added. Use the button above to add one.',
+        editName: 'Edit name',
+        saveName: 'Save',
+        cancelEdit: 'Cancel',
+        userAlreadyExists: 'Username already exists',
+        cardAlreadyAdded: 'Card already added',
+        uploadStatement: 'Upload Statement',
+        scanning: 'Scanning statement…',
+        scanResultTitle: 'Statement Scan Results',
+        detectedCard: 'Detected Card',
+        detectedUser: 'Detected User',
+        detectedBenefits: 'Benefits detected in statement',
+        noBenefitsFound: 'No matching benefits found in statement',
+        cardNotDetected: 'Could not identify card type',
+        alreadyRecorded: 'Already recorded',
+        newlyApplied: 'Newly applied',
+        scanError: 'Failed to parse statement',
+        close: 'Close',
+        monthNames: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+        userNotMatched: 'Could not match user — data not updated',
+        scanSuccess: (n) => `Auto-updated ${n} benefit record${n === 1 ? '' : 's'}`,
+        bulkScanTitle: (n) => `Batch Scan Results (${n} file${n > 1 ? 's' : ''})`,
+        newUserHint: 'Cardholder detected in statement',
+        createUserAndApply: 'Create user & apply benefits',
+        scanningOf: (done, total) => `Scanning ${done}/${total}…`,
+        addCustomCard:    'Add Card from URL',
+        enterCardUrl:     'Enter credit card review page URL',
+        urlPlaceholder:   'https://...',
+        analyzeCard:      'Analyze',
+        analyzingCard:    'Fetching & analyzing…',
+        scrapeError:      'Failed to fetch page. Check the URL.',
+        reviewCardTitle:  'Review Card Info',
+        cardNameEn:       'Card Name (EN)',
+        cardNameZh:       'Card Name (ZH)',
+        annualFeeLabel:   'Annual Fee ($)',
+        cardColor:        'Card Color',
+        benefitsList:     'Benefits',
+        benefitNameEn:    'Benefit Name (EN)',
+        benefitNameZh:    'Benefit Name (ZH)',
+        benefitType:      'Type',
+        benefitAmount:    'Total Value ($)',
+        benefitAmountMo:  'Monthly Value ($)',
+        benefitDescEn:    'Description (EN)',
+        benefitDescZh:    'Description (ZH)',
+        addBenefit:       'Add Benefit',
+        saveCard:         'Save Card',
+        cardSaved:        'Card added!',
+        typeLabels: {
+            annual: 'Annual', monthly: 'Monthly',
+            monthly_uber: 'Monthly Variable (Uber-style)', 'semi-annual': 'Semi-annual',
+            quarterly: 'Quarterly', toggle: 'Toggle / One-time',
+        },
+        colorLabels: ['Slate','Dark Blue','Indigo','Violet','Red','Green','Amber','Rose','Teal'],
+    },
+};
+
+// ── Card configurations ────────────────────────────────────────────
+const CARDS = {
+    amex_platinum: {
+        id: 'amex_platinum',
+        name: { zh: 'Amex Platinum', en: 'Amex Platinum' },
+        annualFee: 895,
+        headerBg: 'bg-slate-900',
+        benefits: [
+            {
+                id: 'airline',
+                name:        { zh: '航空报销 (Airline Fee)',    en: 'Airline Fee Credit' },
+                type: 'annual', totalValue: 200,
+                resetPeriod: { zh: '每年1月1日', en: 'Resets Jan 1' },
+                description: { zh: '行李费、选座费等杂费', en: 'Baggage fees, seat upgrades, etc.' },
+            },
+            {
+                id: 'hotel',
+                name:        { zh: 'FHR/THC 酒店报销', en: 'FHR/THC Hotel Credit' },
+                type: 'semi-annual', totalValue: 600,
+                resetPeriod: { zh: '1月和7月', en: 'Jan & Jul' },
+                description: { zh: '上/下半年各 $300，Fine Hotels & Resorts / The Hotel Collection', en: '$300 each half-year, Fine Hotels & Resorts / The Hotel Collection' },
+            },
+            {
+                id: 'resy',
+                name:        { zh: 'Resy 餐饮报销', en: 'Resy Dining Credit' },
+                type: 'quarterly', totalValue: 400,
+                resetPeriod: { zh: '每季度', en: 'Quarterly' },
+                description: { zh: '每季度 $100，Resy 合作餐厅', en: '$100 per quarter at Resy restaurants' },
+            },
+            {
+                id: 'uber',
+                name:        { zh: 'Uber / Uber Eats', en: 'Uber / Uber Eats' },
+                type: 'monthly_uber', totalValue: 200,
+                monthlyValues: [15,15,15,15,15,15,15,15,15,15,15,35],
+                resetPeriod: { zh: '每月1日', en: 'Resets monthly' },
+                description: { zh: '每月$15，12月$35（含 Uber One 会员）', en: '$15/mo, $35 in December (incl. Uber One membership)' },
+            },
+            {
+                id: 'digital',
+                name:        { zh: '娱乐报销 (Entertainment)', en: 'Entertainment Credit' },
+                type: 'monthly', totalValue: 300, monthlyValue: 25,
+                resetPeriod: { zh: '每月1日', en: 'Resets monthly' },
+                description: { zh: 'Disney+, Hulu, ESPN+, NYT, YouTube Premium 等', en: 'Disney+, Hulu, ESPN+, NYT, YouTube Premium, etc.' },
+            },
+            {
+                id: 'lululemon',
+                name:        { zh: 'Lululemon 报销', en: 'Lululemon Credit' },
+                type: 'quarterly', totalValue: 300,
+                resetPeriod: { zh: '每季度', en: 'Quarterly' },
+                description: { zh: '每季度 $75，lululemon 购物报销', en: '$75 per quarter at lululemon' },
+            },
+            {
+                id: 'saks',
+                name:        { zh: 'Saks Fifth Avenue', en: 'Saks Fifth Avenue Credit' },
+                type: 'semi-annual', totalValue: 100,
+                resetPeriod: { zh: '1月和7月', en: 'Jan & Jul' },
+                description: { zh: '上/下半年各 $50', en: '$50 each half-year' },
+            },
+            {
+                id: 'equinox',
+                name:        { zh: 'Equinox 会员', en: 'Equinox Membership' },
+                type: 'toggle', totalValue: 300,
+                resetPeriod: { zh: '每年', en: 'Annual' },
+                description: { zh: 'Equinox 健身房会员报销', en: 'Equinox gym membership reimbursement' },
+            },
+            {
+                id: 'walmart',
+                name:        { zh: 'Walmart+ 会员', en: 'Walmart+ Membership' },
+                type: 'monthly', totalValue: 155, monthlyValue: 12.95,
+                resetPeriod: { zh: '每月', en: 'Monthly' },
+                description: { zh: '含 Paramount+', en: 'Includes Paramount+' },
+            },
+            {
+                id: 'oura',
+                name:        { zh: 'Oura Ring 报销', en: 'Oura Ring Credit' },
+                type: 'toggle', totalValue: 200,
+                resetPeriod: { zh: '每年', en: 'Annual' },
+                description: { zh: 'Oura Ring 购买或订阅报销', en: 'Oura Ring purchase or subscription credit' },
+            },
+            {
+                id: 'clear',
+                name:        { zh: 'CLEAR® Plus', en: 'CLEAR® Plus' },
+                type: 'toggle', totalValue: 209,
+                resetPeriod: { zh: '每年', en: 'Annual' },
+                description: { zh: '生物识别快速通关', en: 'Biometric expedited security' },
+            },
+        ],
+    },
+    chase_sapphire_reserve_business: {
+        id: 'chase_sapphire_reserve_business',
+        name: { zh: 'Chase Sapphire Reserve Business', en: 'CSR Business' },
+        annualFee: 795,
+        headerBg: 'bg-blue-950',
+        benefits: [
+            {
+                id: 'travel',
+                name:        { zh: '旅行报销 (Travel Credit)', en: 'Travel Credit' },
+                type: 'annual', totalValue: 300,
+                resetPeriod: { zh: '每年（开卡周年日）', en: 'Annual (card anniversary)' },
+                description: { zh: '机票、酒店、邮轮、租车等旅行消费', en: 'Flights, hotels, cruises, car rentals, etc.' },
+            },
+            {
+                id: 'hotel',
+                name:        { zh: 'The Edit 酒店报销', en: 'The Edit Hotel Credit' },
+                type: 'annual', totalValue: 500,
+                resetPeriod: { zh: '每年', en: 'Annual' },
+                description: { zh: '精选豪华酒店，最低入住2晚（2026年起为全年$500）', en: 'Select luxury hotels, min. 2-night stay ($500 annual as of 2026)' },
+            },
+            {
+                id: 'lyft',
+                name:        { zh: 'Lyft 报销', en: 'Lyft Credit' },
+                type: 'monthly', totalValue: 120, monthlyValue: 10,
+                resetPeriod: { zh: '每月1日', en: 'Resets monthly' },
+                description: { zh: '$10/月，有效期至2027年9月', en: '$10/mo, valid through Sept 2027' },
+            },
+            {
+                id: 'doordash',
+                name:        { zh: 'DoorDash 报销', en: 'DoorDash Credit' },
+                type: 'monthly', totalValue: 300, monthlyValue: 25,
+                resetPeriod: { zh: '每月1日', en: 'Resets monthly' },
+                description: { zh: '$25/月优惠码 + 免配送费，有效期至2027年底', en: '$25/mo promo codes + free delivery, through end of 2027' },
+            },
+            {
+                id: 'global_entry',
+                name:        { zh: 'Global Entry / TSA PreCheck', en: 'Global Entry / TSA PreCheck' },
+                type: 'toggle', totalValue: 120,
+                resetPeriod: { zh: '每次申请', en: 'Per application' },
+                description: { zh: 'Global Entry 申请费报销 $120', en: 'Global Entry application fee reimbursement $120' },
+            },
+            {
+                id: 'ziprecruiter',
+                name:        { zh: 'ZipRecruiter 报销', en: 'ZipRecruiter Credit' },
+                type: 'semi-annual', totalValue: 400,
+                resetPeriod: { zh: '1月和7月', en: 'Jan & Jul' },
+                description: { zh: '上/下半年各 $200，招聘平台订阅费', en: '$200 each half-year for ZipRecruiter subscription' },
+            },
+            {
+                id: 'google_workspace',
+                name:        { zh: 'Google Workspace 报销', en: 'Google Workspace Credit' },
+                type: 'annual', totalValue: 200,
+                resetPeriod: { zh: '每年', en: 'Annual' },
+                description: { zh: 'Google Workspace 订阅费报销', en: 'Google Workspace subscription credit' },
+            },
+            {
+                id: 'giftcards',
+                name:        { zh: 'Giftcards.com 报销', en: 'Giftcards.com Credit' },
+                type: 'semi-annual', totalValue: 100,
+                resetPeriod: { zh: '1月和7月', en: 'Jan & Jul' },
+                description: { zh: '上/下半年各 $50，通过指定兑换页面使用', en: '$50 each half-year via dedicated redemption page' },
+            },
+        ],
+    },
+    chase_sapphire_reserve: {
+        id: 'chase_sapphire_reserve',
+        name: { zh: 'Chase Sapphire Reserve', en: 'Chase Sapphire Reserve' },
+        annualFee: 795,
+        headerBg: 'bg-blue-950',
+        benefits: [
+            {
+                id: 'travel',
+                name:        { zh: '旅行报销 (Travel Credit)', en: 'Travel Credit' },
+                type: 'annual', totalValue: 300,
+                resetPeriod: { zh: '每年', en: 'Annual' },
+                description: { zh: '机票、酒店、邮轮、租车等旅行消费', en: 'Flights, hotels, cruises, car rentals, etc.' },
+            },
+            {
+                id: 'hotel',
+                name:        { zh: 'The Edit 酒店报销', en: 'The Edit Hotel Credit' },
+                type: 'annual', totalValue: 500,
+                resetPeriod: { zh: '每年', en: 'Annual' },
+                description: { zh: '精选豪华酒店，最低入住2晚，最高$500/年', en: 'Select luxury hotels, min. 2-night stay, up to $500/yr' },
+            },
+            {
+                id: 'dining',
+                name:        { zh: '餐厅报销 (Sapphire Reserve Tables)', en: 'Dining Credit (Reserve Tables)' },
+                type: 'semi-annual', totalValue: 300,
+                resetPeriod: { zh: '1月和7月', en: 'Jan & Jul' },
+                description: { zh: '上/下半年各 $150，通过 Sapphire Reserve Tables 订餐', en: '$150 each half-year via Sapphire Reserve Tables' },
+            },
+            {
+                id: 'doordash',
+                name:        { zh: 'DoorDash 月度报销', en: 'DoorDash Monthly Credit' },
+                type: 'monthly', totalValue: 300, monthlyValue: 25,
+                resetPeriod: { zh: '每月1日', en: 'Resets monthly' },
+                description: { zh: '$25/月优惠码', en: '$25/mo in promo credits' },
+            },
+            {
+                id: 'doordash_plus',
+                name:        { zh: 'DoorDash+ 年费报销', en: 'DoorDash+ Membership Credit' },
+                type: 'toggle', totalValue: 120,
+                resetPeriod: { zh: '每年', en: 'Annual' },
+                description: { zh: 'DoorDash+ 年度会员费报销', en: 'DoorDash+ annual membership reimbursement' },
+            },
+            {
+                id: 'apple',
+                name:        { zh: 'Apple 服务报销', en: 'Apple Services Credit' },
+                type: 'annual', totalValue: 250,
+                resetPeriod: { zh: '每年', en: 'Annual' },
+                description: { zh: 'Apple TV+ 和 Apple Music 订阅费', en: 'Apple TV+ and Apple Music subscriptions' },
+            },
+            {
+                id: 'lyft',
+                name:        { zh: 'Lyft 报销', en: 'Lyft Credit' },
+                type: 'monthly', totalValue: 120, monthlyValue: 10,
+                resetPeriod: { zh: '每月1日', en: 'Resets monthly' },
+                description: { zh: '$10/月', en: '$10/mo' },
+            },
+            {
+                id: 'peloton',
+                name:        { zh: 'Peloton 报销', en: 'Peloton Credit' },
+                type: 'monthly', totalValue: 120, monthlyValue: 10,
+                resetPeriod: { zh: '每月1日', en: 'Resets monthly' },
+                description: { zh: 'Peloton 订阅 $10/月', en: 'Peloton subscription $10/mo' },
+            },
+            {
+                id: 'stubhub',
+                name:        { zh: 'StubHub 报销', en: 'StubHub Credit' },
+                type: 'semi-annual', totalValue: 300,
+                resetPeriod: { zh: '1月和7月', en: 'Jan & Jul' },
+                description: { zh: '上/下半年各 $150，演出/赛事门票', en: '$150 each half-year for events/tickets' },
+            },
+            {
+                id: 'global_entry',
+                name:        { zh: 'Global Entry / TSA PreCheck', en: 'Global Entry / TSA PreCheck' },
+                type: 'toggle', totalValue: 100,
+                resetPeriod: { zh: '每次申请', en: 'Per renewal cycle' },
+                description: { zh: 'Global Entry 申请费报销 $100', en: 'Global Entry application fee reimbursement $100' },
+            },
+        ],
+    },
+    chase_sapphire_preferred: {
+        id: 'chase_sapphire_preferred',
+        name: { zh: 'Chase Sapphire Preferred', en: 'Chase Sapphire Preferred' },
+        annualFee: 95,
+        headerBg: 'bg-indigo-700',
+        benefits: [
+            {
+                id: 'hotel',
+                name:        { zh: '酒店报销 (Hotel Credit)', en: 'Hotel Credit' },
+                type: 'annual', totalValue: 50,
+                resetPeriod: { zh: '每年（开卡周年日）', en: 'Annual (card anniversary)' },
+                description: { zh: '通过 Chase Travel 预订酒店，每年 $50（2025年6月起）', en: 'Book via Chase Travel portal, $50/year (added June 2025)' },
+            },
+        ],
+    },
+    chase_marriott_premier_plus: {
+        id: 'chase_marriott_premier_plus',
+        name: { zh: 'Chase Marriott Premier Plus', en: 'Chase Marriott Bonvoy Premier Plus' },
+        annualFee: 95,
+        headerBg: 'bg-red-800',
+        benefits: [
+            {
+                id: 'free_night',
+                name:        { zh: '免费住宿券 (Free Night Certificate)', en: 'Free Night Certificate' },
+                type: 'toggle', totalValue: 0,
+                resetPeriod: { zh: '每年（开卡周年日）', en: 'Annual (card anniversary)' },
+                description: { zh: '每年一张免费住宿券，可兑换 35,000 积分以下的万豪酒店', en: 'One free night certificate/year, redeemable at Marriott properties up to 35,000 points' },
+            },
+        ],
+    },
+    amex_gold: {
+        id: 'amex_gold',
+        name: { zh: 'Amex Gold', en: 'Amex Gold' },
+        annualFee: 325,
+        headerBg: 'bg-yellow-700',
+        benefits: [
+            {
+                id: 'dining',
+                name:        { zh: '餐饮报销 (Dining Credit)', en: 'Dining Credit' },
+                type: 'monthly', totalValue: 120, monthlyValue: 10,
+                resetPeriod: { zh: '每月', en: 'Monthly' },
+                description: { zh: 'Grubhub, Cheesecake Factory 等 $10/月', en: 'Grubhub, Cheesecake Factory, etc. $10/mo' },
+            },
+            {
+                id: 'uber',
+                name:        { zh: 'Uber Cash', en: 'Uber Cash' },
+                type: 'monthly', totalValue: 120, monthlyValue: 10,
+                resetPeriod: { zh: '每月', en: 'Monthly' },
+                description: { zh: 'Uber 或 Uber Eats $10/月', en: 'Uber or Uber Eats $10/mo' },
+            },
+            {
+                id: 'dunkin',
+                name:        { zh: "Dunkin' 报销", en: "Dunkin' Credit" },
+                type: 'monthly', totalValue: 84, monthlyValue: 7,
+                resetPeriod: { zh: '每月', en: 'Monthly' },
+                description: { zh: "Dunkin' $7/月", en: "Dunkin' $7/mo" },
+            },
+            {
+                id: 'resy',
+                name:        { zh: 'Resy 报销', en: 'Resy Credit' },
+                type: 'semi-annual', totalValue: 50,
+                resetPeriod: { zh: '1月和7月', en: 'Jan & Jul' },
+                description: { zh: '上/下半年各 $25', en: '$25 each half-year' },
+            },
+            {
+                id: 'hotel',
+                name:        { zh: 'Hotel Collection', en: 'Hotel Collection' },
+                type: 'annual', totalValue: 100,
+                resetPeriod: { zh: '每年', en: 'Annual' },
+                description: { zh: 'The Hotel Collection 酒店报销', en: 'The Hotel Collection hotel credit' },
+            },
+        ],
+    },
+};
+
+// ALL_CARD_IDS is the static baseline; dynamic cards are merged into CARDS at runtime
+const ALL_CARD_IDS = Object.keys(CARDS);
+
+const CARD_COLORS = [
+    'bg-slate-900','bg-blue-950','bg-indigo-700','bg-violet-800',
+    'bg-red-800','bg-green-800','bg-amber-700','bg-rose-700','bg-teal-700',
+];
+const BENEFIT_TYPES = ['annual','monthly','monthly_uber','semi-annual','quarterly','toggle'];
+
+// ── Card Editor modal component ────────────────────────────────────
+const CardEditor = ({ draft, onChange, onSave, onCancel, lang, t }) => {
+    const updCard = (field, val) => onChange({ ...draft, [field]: val });
+    const updName = (k, val)    => onChange({ ...draft, name: { ...draft.name, [k]: val } });
+
+    const updBenefit = (idx, patch) => {
+        const benefits = draft.benefits.map((b, i) => i !== idx ? b : { ...b, ...patch });
+        // Keep totalValue in sync with monthlyValue
+        if ('monthlyValue' in patch) {
+            benefits[idx].totalValue = (patch.monthlyValue || 0) * 12;
+        }
+        if ('type' in patch) {
+            const b = benefits[idx];
+            if (patch.type === 'monthly' || patch.type === 'monthly_uber') {
+                b.monthlyValue = b.monthlyValue || (b.totalValue > 12 ? Math.round(b.totalValue / 12) : b.totalValue);
+                b.totalValue   = (b.monthlyValue || 0) * 12;
+            }
+        }
+        onChange({ ...draft, benefits });
+    };
+
+    const removeBenefit = (idx) =>
+        onChange({ ...draft, benefits: draft.benefits.filter((_, i) => i !== idx) });
+
+    const addBenefit = () => onChange({
+        ...draft,
+        benefits: [...draft.benefits, {
+            id: `benefit_${Date.now()}`,
+            name: { zh: '', en: '' },
+            type: 'annual',
+            totalValue: 0,
+            resetPeriod: { zh: '每年', en: 'Annual' },
+            description: { zh: '', en: '' },
+        }],
+    });
+
+    const colorLabels = t.colorLabels;
+
+    return (
+        <>
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 flex-shrink-0">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Icon name="settings" size={16} className="text-slate-500"/>
+                    {t.reviewCardTitle}
+                </h2>
+                <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100">
+                    <Icon name="x" size={18}/>
+                </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-5" style={{maxHeight:'62vh'}}>
+                {/* Card basics */}
+                <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-xs font-medium text-slate-500">{t.cardNameEn}</label>
+                            <input value={draft.name.en} onChange={e => updName('en', e.target.value)}
+                                className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"/>
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-500">{t.cardNameZh}</label>
+                            <input value={draft.name.zh} onChange={e => updName('zh', e.target.value)}
+                                className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"/>
+                        </div>
+                    </div>
+                    <div className="flex items-end gap-6">
+                        <div>
+                            <label className="text-xs font-medium text-slate-500">{t.annualFeeLabel}</label>
+                            <input type="number" min="0" value={draft.annualFee}
+                                onChange={e => updCard('annualFee', parseInt(e.target.value) || 0)}
+                                className="mt-1 w-28 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"/>
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-500 block mb-1">{t.cardColor}</label>
+                            <div className="flex gap-1.5 flex-wrap">
+                                {CARD_COLORS.map((c, ci) => (
+                                    <button key={c} onClick={() => updCard('headerBg', c)} title={colorLabels[ci]}
+                                        className={`w-6 h-6 rounded-full ${c} transition-transform hover:scale-110 ${
+                                            draft.headerBg === c ? 'ring-2 ring-offset-2 ring-blue-500 scale-110' : ''
+                                        }`}/>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Benefits */}
+                <div>
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-semibold text-slate-700">
+                            {t.benefitsList} ({draft.benefits.length})
+                        </h3>
+                        <button onClick={addBenefit}
+                            className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium">
+                            <Icon name="plus" size={12}/> {t.addBenefit}
+                        </button>
+                    </div>
+                    <div className="space-y-3">
+                        {draft.benefits.map((b, idx) => {
+                            const isMonthly = b.type === 'monthly' || b.type === 'monthly_uber';
+                            return (
+                                <div key={b.id || idx} className="border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/50">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs font-semibold text-slate-400">#{idx + 1}</span>
+                                        <button onClick={() => removeBenefit(idx)}
+                                            className="text-slate-300 hover:text-red-400 transition-colors">
+                                            <Icon name="x" size={14}/>
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="text-xs text-slate-400">{t.benefitNameEn}</label>
+                                            <input value={b.name.en}
+                                                onChange={e => updBenefit(idx, { name: { ...b.name, en: e.target.value } })}
+                                                className="mt-0.5 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white"/>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-slate-400">{t.benefitNameZh}</label>
+                                            <input value={b.name.zh}
+                                                onChange={e => updBenefit(idx, { name: { ...b.name, zh: e.target.value } })}
+                                                className="mt-0.5 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white"/>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 items-end">
+                                        <div className="flex-1">
+                                            <label className="text-xs text-slate-400">{t.benefitType}</label>
+                                            <select value={b.type}
+                                                onChange={e => updBenefit(idx, { type: e.target.value })}
+                                                className="mt-0.5 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white">
+                                                {BENEFIT_TYPES.map(tp => (
+                                                    <option key={tp} value={tp}>{t.typeLabels[tp]}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-slate-400">
+                                                {isMonthly ? t.benefitAmountMo : t.benefitAmount}
+                                            </label>
+                                            <input type="number" min="0"
+                                                value={isMonthly ? (b.monthlyValue || 0) : b.totalValue}
+                                                onChange={e => {
+                                                    const v = parseInt(e.target.value) || 0;
+                                                    updBenefit(idx, isMonthly
+                                                        ? { monthlyValue: v, totalValue: v * 12 }
+                                                        : { totalValue: v });
+                                                }}
+                                                className="mt-0.5 w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white"/>
+                                        </div>
+                                        {isMonthly && (
+                                            <div className="text-xs text-slate-400 pb-1.5">
+                                                = ${(b.monthlyValue || 0) * 12}/yr
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="text-xs text-slate-400">{t.benefitDescZh}</label>
+                                            <input value={b.description?.zh || ''}
+                                                onChange={e => updBenefit(idx, { description: { ...b.description, zh: e.target.value } })}
+                                                placeholder="可选"
+                                                className="mt-0.5 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white"/>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-slate-400">{t.benefitDescEn}</label>
+                                            <input value={b.description?.en || ''}
+                                                onChange={e => updBenefit(idx, { description: { ...b.description, en: e.target.value } })}
+                                                placeholder="optional"
+                                                className="mt-0.5 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400 bg-white"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 flex gap-3 flex-shrink-0">
+                <button onClick={onCancel}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 font-medium transition-colors">
+                    {t.close}
+                </button>
+                <button onClick={onSave}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-colors">
+                    {t.saveCard}
+                </button>
+            </div>
+        </>
+    );
+};
+
+// ── Helpers ────────────────────────────────────────────────────────
+const getDefaultUsage = (benefits) => {
+    const d = {};
+    benefits.forEach(b => { d[b.id] = { usedAmount: 0, checkedMonths: [], checkedPeriods: [], completed: false }; });
+    return d;
+};
+
+const calcRecouped = (benefits, usage) => {
+    let total = 0;
+    benefits.forEach(b => {
+        const u = usage[b.id] || {};
+        if      (b.type === 'annual')        total += u.usedAmount || 0;
+        else if (b.type === 'monthly')       total += (u.checkedMonths?.length || 0) * (b.monthlyValue || 0);
+        else if (b.type === 'monthly_uber')  total += (u.checkedMonths || []).reduce((a, m) => a + (b.monthlyValues?.[m] || 0), 0);
+        else if (b.type === 'semi-annual')   total += (u.checkedPeriods?.length || 0) * (b.totalValue / 2);
+        else if (b.type === 'quarterly')     total += (u.checkedPeriods?.length || 0) * (b.totalValue / 4);
+        else if (b.type === 'toggle')        total += u.completed ? b.totalValue : 0;
+    });
+    return total;
+};
+
+// ── Main App ───────────────────────────────────────────────────────
+const App = () => {
+    const [lang, setLang]                   = useState(() => localStorage.getItem('lang') || 'zh');
+    const [users, setUsers]                 = useState([]);
+    const [selectedUser, setSelectedUser]   = useState(null);
+    const [selectedCardId, setSelectedCardId] = useState(null);
+    const [userCards, setUserCards]         = useState([]);   // card_ids for selected user
+    const [usage, setUsage]                 = useState({});
+    const [loading, setLoading]             = useState(true);
+    const [saveStatus, setSaveStatus]       = useState('idle');
+    const [expandedId, setExpandedId]       = useState(null);
+    const [addingUser, setAddingUser]       = useState(false);
+    const [newUserName, setNewUserName]     = useState('');
+    const [editingUserId, setEditingUserId] = useState(null);
+    const [editUserName, setEditUserName]   = useState('');
+    const [showAddCard, setShowAddCard]     = useState(false);
+    const [scanning, setScanning]           = useState(false);
+    const [scanProgress, setScanProgress]   = useState({done: 0, total: 0});
+    const [scanResults, setScanResults]     = useState(null);  // null = closed, array = open
+
+    // Custom card add-from-URL flow
+    const [customCardIds, setCustomCardIds] = useState([]);   // IDs of user-added custom cards
+    const [addCardStep, setAddCardStep]     = useState('closed'); // 'closed'|'url'|'scraping'|'editing'
+    const [scrapeUrl, setScrapeUrl]         = useState('');
+    const [scrapeUrlError, setScrapeUrlError] = useState('');
+    const [cardDraft, setCardDraft]         = useState(null);
+
+    const [selectedYear, setSelectedYear]       = useState(new Date().getFullYear());
+    const [usageReloadTick, setUsageReloadTick] = useState(0);
+
+    const isInit      = useRef(false);
+    const prevLoadKey = useRef('');
+    const saveTimer   = useRef(null);
+    const addUserRef  = useRef(null);
+    const editUserRef = useRef(null);
+    const addCardRef  = useRef(null);
+    const fileInputRef = useRef(null);
+
+    const t = T[lang];
+
+    const toggleLang = () => {
+        const next = lang === 'zh' ? 'en' : 'zh';
+        setLang(next);
+        localStorage.setItem('lang', next);
+    };
+
+    const cardName = (card) => card.name[lang];
+
+    // Load users on mount
+    useEffect(() => {
+        fetch(`${API}/users`)
+            .then(r => r.json())
+            .then(data => {
+                setUsers(data);
+                if (data.length > 0) setSelectedUser(data[0]);
+                else setLoading(false);
+            });
+    }, []);
+
+    // Load custom cards on mount and merge into CARDS
+    useEffect(() => {
+        fetch(`${API}/custom-cards`)
+            .then(r => r.json())
+            .then(cards => {
+                cards.forEach(c => { CARDS[c.id] = c; });
+                setCustomCardIds(cards.map(c => c.id));
+            })
+            .catch(() => {});
+    }, []);
+
+    // Load user's cards when selected user changes
+    useEffect(() => {
+        if (!selectedUser) return;
+        fetch(`${API}/users/${selectedUser.id}/cards`)
+            .then(r => r.json())
+            .then(cards => {
+                setUserCards(cards);
+                // pick first card or keep current if still in list
+                setSelectedCardId(prev =>
+                    cards.includes(prev) ? prev : (cards[0] || null)
+                );
+            });
+    }, [selectedUser?.id]);
+
+    // Load usage when user, card, year, or reload tick changes
+    useEffect(() => {
+        if (!selectedUser || !selectedCardId) {
+            if (selectedUser && userCards.length === 0) setLoading(false);
+            return;
+        }
+        // Show loading spinner only when user/card/year actually changes
+        const key = `${selectedUser.id}|${selectedCardId}|${selectedYear}`;
+        const contentChanged = key !== prevLoadKey.current;
+        prevLoadKey.current = key;
+
+        isInit.current = false;
+        if (contentChanged) {
+            setLoading(true);
+            setExpandedId(null);
+        }
+        const card = CARDS[selectedCardId];
+        fetch(`${API}/usage/${selectedUser.id}/${selectedCardId}?year=${selectedYear}`)
+            .then(r => r.json())
+            .then(data => {
+                setUsage({ ...getDefaultUsage(card.benefits), ...data });
+                setLoading(false);
+                isInit.current = true;
+            })
+            .catch(() => {
+                setUsage(getDefaultUsage(card.benefits));
+                setLoading(false);
+                isInit.current = true;
+            });
+    }, [selectedUser?.id, selectedCardId, selectedYear, usageReloadTick]);
+
+    // Auto-save on every usage change
+    useEffect(() => {
+        if (!isInit.current || !selectedUser || !selectedCardId) return;
+        setSaveStatus('saving');
+        clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => {
+            fetch(`${API}/usage/${selectedUser.id}/${selectedCardId}?year=${selectedYear}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(usage),
+            })
+            .then(r => r.ok ? setSaveStatus('saved') : setSaveStatus('error'))
+            .catch(() => setSaveStatus('error'));
+        }, 400);
+    }, [usage]);
+
+    // Focus inputs when opened
+    useEffect(() => {
+        if (addingUser && addUserRef.current) addUserRef.current.focus();
+    }, [addingUser]);
+
+    useEffect(() => {
+        if (editingUserId && editUserRef.current) editUserRef.current.focus();
+    }, [editingUserId]);
+
+    useEffect(() => {
+        if (showAddCard && addCardRef.current) addCardRef.current.focus();
+    }, [showAddCard]);
+
+    // Close add-card dropdown on outside click
+    useEffect(() => {
+        if (!showAddCard) return;
+        const handler = (e) => {
+            if (addCardRef.current && !addCardRef.current.closest('[data-addcard]')?.contains(e.target)) {
+                setShowAddCard(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showAddCard]);
+
+    // ── User management ────────────────────────────────────────────
+    const confirmAddUser = () => {
+        const name = newUserName.trim();
+        if (!name) return;
+        fetch(`${API}/users`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+        })
+        .then(r => r.json())
+        .then(newUser => {
+            if (newUser.error) { alert(t.userAlreadyExists); return; }
+            setUsers(prev => [...prev, newUser]);
+            setSelectedUser(newUser);
+            setAddingUser(false);
+            setNewUserName('');
+        });
+    };
+
+    const deleteUser = (user) => {
+        if (users.length === 1) { alert(t.keepOneUser); return; }
+        if (!confirm(t.confirmDeleteUser(user.name))) return;
+        fetch(`${API}/users/${user.id}`, { method: 'DELETE' }).then(() => {
+            const remaining = users.filter(u => u.id !== user.id);
+            setUsers(remaining);
+            if (selectedUser?.id === user.id) setSelectedUser(remaining[0]);
+        });
+    };
+
+    const startEditUser = (user, e) => {
+        e.stopPropagation();
+        setEditingUserId(user.id);
+        setEditUserName(user.name);
+    };
+
+    const confirmEditUser = () => {
+        const name = editUserName.trim();
+        if (!name) { setEditingUserId(null); return; }
+        fetch(`${API}/users/${editingUserId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+        })
+        .then(r => r.json())
+        .then(updated => {
+            if (updated.error) { alert(t.userAlreadyExists); return; }
+            setUsers(prev => prev.map(u => u.id === editingUserId ? { ...u, name } : u));
+            if (selectedUser?.id === editingUserId) setSelectedUser(prev => ({ ...prev, name }));
+            setEditingUserId(null);
+        });
+    };
+
+    // ── Card management ────────────────────────────────────────────
+    const addCardForUser = (cardId) => {
+        fetch(`${API}/users/${selectedUser.id}/cards`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ card_id: cardId }),
+        }).then(() => {
+            setUserCards(prev => [...prev, cardId]);
+            setSelectedCardId(cardId);
+            setShowAddCard(false);
+        });
+    };
+
+    const removeCardForUser = (cardId) => {
+        if (userCards.length === 1) return; // keep at least one
+        fetch(`${API}/users/${selectedUser.id}/cards/${cardId}`, { method: 'DELETE' })
+            .then(() => {
+                const remaining = userCards.filter(c => c !== cardId);
+                setUserCards(remaining);
+                if (selectedCardId === cardId) setSelectedCardId(remaining[0] || null);
+            });
+    };
+
+    // ── Statement upload (supports multiple files) ─────────────────
+    const handleFileChange = async (e) => {
+        const files = Array.from(e.target.files);
+        e.target.value = '';
+        if (!files.length) return;
+        setScanning(true);
+        setScanProgress({ done: 0, total: files.length });
+        const results = [];
+        for (const file of files) {
+            const form = new FormData();
+            form.append('file', file);
+            try {
+                const data = await fetch(`${API}/scan-statement`, { method: 'POST', body: form }).then(r => r.json());
+                data._filename = file.name;
+                results.push(data);
+            } catch {
+                results.push({ _filename: file.name, error: t.scanError });
+            }
+            setScanProgress(p => ({ ...p, done: p.done + 1 }));
+        }
+        setScanning(false);
+        setScanResults(results);
+        // Switch UI to first matched result
+        const first = results.find(r => r.user && r.applied?.length > 0);
+        if (first) {
+            const mu = users.find(u => u.id === first.user.id);
+            if (mu) {
+                setSelectedUser(mu);
+                if (first.card_id && CARDS[first.card_id]) setSelectedCardId(first.card_id);
+            }
+        }
+    };
+
+    // ── Create new user from scan result and apply its benefits ────
+    const createUserAndApply = async (idx) => {
+        const result = scanResults[idx];
+        const name = result.cardholder || '未知用户';
+        try {
+            const newUser = await fetch(`${API}/users`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            }).then(r => r.json());
+            if (newUser.error) { alert(newUser.error); return; }
+            const applyRes = await fetch(`${API}/apply-benefits`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id:    newUser.id,
+                    card_id:    result.card_id,
+                    detected:   result.detected,
+                    stmt_month: result.stmt_month,
+                    stmt_year:  result.stmt_year,
+                }),
+            }).then(r => r.json());
+            setUsers(prev => [...prev, newUser]);
+            setScanResults(prev => prev.map((r, i) =>
+                i === idx ? { ...r, user: newUser, applied: applyRes.applied } : r
+            ));
+        } catch (err) {
+            console.error('createUserAndApply error:', err);
+        }
+    };
+
+    // ── Custom card: scrape URL ────────────────────────────────────
+    const handleScrapeCard = async () => {
+        const url = scrapeUrl.trim();
+        if (!url) return;
+        setScrapeUrlError('');
+        setAddCardStep('scraping');
+        try {
+            const data = await fetch(`${API}/scrape-card`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url }),
+            }).then(r => r.json());
+            if (data.error) { setScrapeUrlError(data.error); setAddCardStep('url'); return; }
+            setCardDraft(data);
+            setAddCardStep('editing');
+        } catch {
+            setScrapeUrlError(t.scrapeError);
+            setAddCardStep('url');
+        }
+    };
+
+    // ── Custom card: save confirmed draft ─────────────────────────
+    const handleSaveCard = async () => {
+        if (!cardDraft?.id) return;
+        // Ensure resetPeriod is set for all benefits
+        const finalCard = {
+            ...cardDraft,
+            benefits: cardDraft.benefits.map(b => ({
+                ...b,
+                resetPeriod: b.resetPeriod || { zh: '每年', en: 'Annual' },
+                description: b.description || { zh: '', en: '' },
+            })),
+        };
+        await fetch(`${API}/custom-cards`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(finalCard),
+        });
+        CARDS[finalCard.id] = finalCard;
+        setCustomCardIds(prev => prev.includes(finalCard.id) ? prev : [...prev, finalCard.id]);
+        setAddCardStep('closed');
+        setScrapeUrl('');
+        setCardDraft(null);
+        // Auto-add to current user if one is selected
+        if (selectedUser) {
+            fetch(`${API}/users/${selectedUser.id}/cards`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ card_id: finalCard.id }),
+            }).then(() => {
+                setUserCards(prev => prev.includes(finalCard.id) ? prev : [...prev, finalCard.id]);
+                setSelectedCardId(finalCard.id);
+            });
+        }
+    };
+
+    // ── Usage handlers ─────────────────────────────────────────────
+    const card = selectedCardId ? CARDS[selectedCardId] : null;
+
+    const handleSlider = (id, value) => {
+        const b = card.benefits.find(b => b.id === id);
+        setUsage(prev => ({ ...prev, [id]: { ...prev[id], usedAmount: Math.min(Math.max(0, value), b.totalValue) } }));
+    };
+    const toggleMonth = (id, idx) => {
+        setUsage(prev => {
+            const cur  = prev[id]?.checkedMonths || [];
+            const next = cur.includes(idx) ? cur.filter(m => m !== idx) : [...cur, idx];
+            return { ...prev, [id]: { ...prev[id], checkedMonths: next } };
+        });
+    };
+    const togglePeriod = (id, period) => {
+        setUsage(prev => {
+            const cur  = prev[id]?.checkedPeriods || [];
+            const next = cur.includes(period) ? cur.filter(p => p !== period) : [...cur, period];
+            return { ...prev, [id]: { ...prev[id], checkedPeriods: next } };
+        });
+    };
+    const toggleComplete = (id) => {
+        setUsage(prev => ({ ...prev, [id]: { ...prev[id], completed: !prev[id]?.completed } }));
+    };
+    const resetData = () => {
+        if (!confirm(t.confirmReset(selectedUser?.name, cardName(card)))) return;
+        fetch(`${API}/reset/${selectedUser.id}/${selectedCardId}?year=${selectedYear}`, { method: 'POST' })
+            .then(() => {
+                isInit.current = false;
+                setUsage(getDefaultUsage(card.benefits));
+                setTimeout(() => { isInit.current = true; }, 0);
+                setSaveStatus('saved');
+            });
+    };
+
+    // ── Scan modal close: refresh data if any benefits were applied ─
+    const handleScanClose = () => {
+        const results = scanResults;
+        setScanResults(null);
+        if (results?.some(r => r.applied?.some(a => a.was_new))) {
+            const first = results.find(r => r.applied?.some(a => a.was_new));
+            if (first?.user) {
+                const mu = users.find(u => u.id === first.user.id);
+                if (mu) {
+                    setSelectedUser(mu);
+                    if (first.card_id && CARDS[first.card_id]) setSelectedCardId(first.card_id);
+                    setSelectedYear(first.stmt_year || selectedYear);
+                }
+            }
+            setUsageReloadTick(t => t + 1);
+        }
+    };
+
+    // ── Save badge ─────────────────────────────────────────────────
+    const SaveBadge = () => {
+        if (saveStatus === 'idle')   return null;
+        if (saveStatus === 'saving') return <span className="text-xs text-white/50 flex items-center gap-1"><Icon name="loader" size={11} className="spin"/> {t.saving}</span>;
+        if (saveStatus === 'saved')  return <span className="text-xs text-emerald-300 flex items-center gap-1"><Icon name="check-circle" size={11}/> {t.saved}</span>;
+        if (saveStatus === 'error')  return <span className="text-xs text-red-300 flex items-center gap-1"><Icon name="x-circle" size={11}/> {t.saveFailed}</span>;
+        return null;
+    };
+
+    // ── No users → first-run screen ────────────────────────────────
+    if (!loading && users.length === 0) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-slate-100">
+                <div className="bg-white rounded-2xl p-8 shadow-lg max-w-xs w-full mx-4 text-center">
+                    <Icon name="user" size={36} className="mx-auto mb-4 text-slate-300"/>
+                    <h2 className="text-lg font-bold mb-1">{t.welcome}</h2>
+                    <p className="text-slate-400 text-sm mb-5">{t.createUserPrompt}</p>
+                    <input
+                        ref={addUserRef}
+                        type="text" placeholder={t.usernamePlaceholder}
+                        value={newUserName}
+                        onChange={e => setNewUserName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && confirmAddUser()}
+                        className="w-full border border-slate-200 rounded-lg px-4 py-2 mb-3 text-sm focus:outline-none focus:border-blue-400"
+                    />
+                    <button onClick={confirmAddUser}
+                        className="w-full bg-slate-900 text-white rounded-lg py-2.5 font-medium text-sm hover:bg-slate-700 transition-colors">
+                        {t.create}
+                    </button>
+                    <button onClick={toggleLang}
+                        className="mt-4 text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 mx-auto">
+                        <Icon name="globe" size={12}/> {lang === 'zh' ? 'English' : '中文'}
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // ── Loading ────────────────────────────────────────────────────
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center text-slate-400">
+                    <Icon name="loader" size={30} className="mx-auto mb-3 spin"/>
+                    <p className="text-sm">{t.loading}</p>
+                </div>
+            </div>
+        );
+    }
+
+    const totalRecouped = card ? calcRecouped(card.benefits, usage) : 0;
+    const effectiveFee  = card ? card.annualFee - totalRecouped : 0;
+    const allCardIds           = [...ALL_CARD_IDS, ...customCardIds];
+    const availableCardsToAdd  = allCardIds.filter(cid => !userCards.includes(cid));
+
+    // ── Main UI ────────────────────────────────────────────────────
+    return (
+        <div className="max-w-3xl mx-auto px-4 pt-4 pb-28 fade-in">
+
+            {/* ── App Header ──────────────────────────────────────── */}
+            <div className="flex items-center gap-3 mb-5">
+                <AppLogo size={40}/>
+                <div>
+                    <h1 className="text-xl font-bold text-slate-800 leading-tight">{t.appTitle}</h1>
+                    <p className="text-xs text-slate-400 leading-tight">
+                        {lang === 'zh' ? '多卡福利追踪与管理' : 'Multi-card benefits tracker'}
+                    </p>
+                </div>
+            </div>
+
+            {/* ── Top bar: user selector + lang toggle ─────────────── */}
+            <div className="flex items-start gap-2 mb-3 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap flex-1">
+                    <Icon name="user" size={13} className="text-slate-400 flex-shrink-0 mt-2"/>
+                    {users.map(user => (
+                        <div key={user.id}>
+                            {editingUserId === user.id ? (
+                                /* ── Inline edit mode ── */
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        ref={editUserRef}
+                                        type="text"
+                                        value={editUserName}
+                                        onChange={e => setEditUserName(e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') confirmEditUser();
+                                            if (e.key === 'Escape') setEditingUserId(null);
+                                        }}
+                                        className="border border-blue-400 rounded-full px-3 py-1 text-sm w-24 focus:outline-none"
+                                    />
+                                    <button onClick={confirmEditUser}
+                                        className="bg-slate-800 text-white rounded-full w-6 h-6 text-xs hover:bg-slate-700 flex items-center justify-center">✓</button>
+                                    <button onClick={() => setEditingUserId(null)}
+                                        className="text-slate-400 text-sm hover:text-slate-600">✕</button>
+                                </div>
+                            ) : (
+                                /* ── Normal pill ── */
+                                <div className={`flex items-center gap-1 rounded-full text-sm font-medium transition-all cursor-pointer select-none ${
+                                    selectedUser?.id === user.id
+                                        ? 'bg-slate-800 text-white pl-3 pr-1.5 py-1.5 shadow-sm'
+                                        : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-400 pl-3 pr-1.5 py-1.5'
+                                }`}>
+                                    <span onClick={() => setSelectedUser(user)}>{user.name}</span>
+                                    {/* pencil edit */}
+                                    <button onClick={(e) => startEditUser(user, e)}
+                                        className={`rounded-full p-0.5 transition-colors ${
+                                            selectedUser?.id === user.id ? 'text-white/40 hover:text-white' : 'text-slate-300 hover:text-slate-500'
+                                        }`}>
+                                        <Icon name="pencil" size={10}/>
+                                    </button>
+                                    {/* delete */}
+                                    <button onClick={(e) => { e.stopPropagation(); deleteUser(user); }}
+                                        className={`rounded-full p-0.5 transition-colors ${
+                                            selectedUser?.id === user.id ? 'text-white/40 hover:text-red-300' : 'text-slate-300 hover:text-red-400'
+                                        }`}>
+                                        <Icon name="x" size={11}/>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                    {addingUser ? (
+                        <div className="flex items-center gap-1.5">
+                            <input
+                                ref={addUserRef}
+                                type="text" placeholder={t.usernamePlaceholder}
+                                value={newUserName}
+                                onChange={e => setNewUserName(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter') confirmAddUser();
+                                    if (e.key === 'Escape') { setAddingUser(false); setNewUserName(''); }
+                                }}
+                                className="border border-slate-300 rounded-full px-3 py-1 text-sm w-24 focus:outline-none focus:border-blue-400"
+                            />
+                            <button onClick={confirmAddUser}
+                                className="bg-slate-800 text-white rounded-full w-6 h-6 text-xs hover:bg-slate-700 flex items-center justify-center">✓</button>
+                            <button onClick={() => { setAddingUser(false); setNewUserName(''); }}
+                                className="text-slate-400 text-sm hover:text-slate-600">✕</button>
+                        </div>
+                    ) : (
+                        <button onClick={() => setAddingUser(true)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs text-slate-400 border border-dashed border-slate-300 hover:border-slate-500 hover:text-slate-600 transition-colors">
+                            <Icon name="user-plus" size={12}/> {t.addUser}
+                        </button>
+                    )}
+                </div>
+                {/* Language toggle */}
+                <button onClick={toggleLang}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs bg-white border border-slate-200 text-slate-500 hover:border-slate-400 hover:text-slate-700 transition-colors flex-shrink-0 mt-0.5">
+                    <Icon name="globe" size={12}/> {lang === 'zh' ? 'EN' : '中文'}
+                </button>
+            </div>
+
+            {/* ── Card tabs + add card ────────────────────────────── */}
+            <div className="flex gap-2 mb-4 items-center">
+                {/* scrollable tabs */}
+                <div className="flex gap-2 overflow-x-auto pb-1 items-center flex-1">
+                {userCards.map(cid => (
+                    <div key={cid} className="relative flex-shrink-0">
+                        <button onClick={() => setSelectedCardId(cid)}
+                            className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all pr-8 ${
+                                selectedCardId === cid
+                                    ? 'bg-slate-800 text-white shadow-sm'
+                                    : 'bg-white text-slate-500 border border-slate-200 hover:border-slate-400'
+                            }`}>
+                            {cardName(CARDS[cid])}
+                        </button>
+                        {/* remove card × */}
+                        {userCards.length > 1 && (
+                            <button onClick={() => removeCardForUser(cid)}
+                                title={t.removeCard}
+                                className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 transition-colors ${
+                                    selectedCardId === cid ? 'text-white/40 hover:text-red-300' : 'text-slate-300 hover:text-red-400'
+                                }`}>
+                                <Icon name="x" size={11}/>
+                            </button>
+                        )}
+                    </div>
+                ))}
+                </div>
+                {/* Add card dropdown — outside overflow-x-auto so it isn't clipped */}
+                <div className="relative flex-shrink-0" data-addcard="1">
+                    <button onClick={() => setShowAddCard(prev => !prev)}
+                        className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs text-slate-400 border border-dashed border-slate-300 hover:border-slate-500 hover:text-slate-600 transition-colors whitespace-nowrap">
+                        <Icon name="plus" size={12}/> {t.addCard}
+                    </button>
+                    {showAddCard && (
+                        <div ref={addCardRef} data-addcard="1"
+                            className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden min-w-max">
+                            {availableCardsToAdd.map(cid => (
+                                <button key={cid} onClick={() => addCardForUser(cid)}
+                                    className="block w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                                    {cardName(CARDS[cid])}
+                                </button>
+                            ))}
+                            <div className="border-t border-slate-100"/>
+                            <button onClick={() => { setShowAddCard(false); setScrapeUrl(''); setScrapeUrlError(''); setAddCardStep('url'); }}
+                                className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 transition-colors font-medium">
+                                <Icon name="link" size={13}/> {t.addCustomCard}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* ── No card selected ───────────────────────────────── */}
+            {!card && (
+                <div className="bg-white rounded-2xl p-10 text-center text-slate-400 shadow-sm">
+                    <Icon name="credit-card" size={36} className="mx-auto mb-3 text-slate-200"/>
+                    <p className="text-sm">{t.noCards}</p>
+                </div>
+            )}
+
+            {/* ── Header card ────────────────────────────────────── */}
+            {card && (
+                <>
+                <div className={`${card.headerBg} rounded-2xl p-6 text-white shadow-xl mb-5 relative overflow-hidden`}>
+                    <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"/>
+                    <div className="flex justify-between items-start mb-5 relative z-10">
+                        <div>
+                            <h1 className="text-xl font-bold flex items-center gap-2">
+                                <Icon name="credit-card" size={20}/> {cardName(card)}
+                            </h1>
+                            <p className="text-white/50 text-xs mt-1 flex items-center gap-2">
+                            <span>{selectedUser?.name} · {t.annualFee} ${card.annualFee}</span>
+                            <span className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-0.5">
+                                <button onClick={() => setSelectedYear(y => y - 1)} className="hover:text-white transition-colors px-0.5">‹</button>
+                                <span className="font-semibold text-white/80 tabular-nums">{selectedYear}</span>
+                                <button onClick={() => setSelectedYear(y => y + 1)} className="hover:text-white transition-colors px-0.5">›</button>
+                            </span>
+                        </p>
+                        </div>
+                        <SaveBadge/>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 relative z-10">
+                        <div className="bg-white/10 rounded-xl p-4 border border-white/10">
+                            <div className="text-xs text-white/50 mb-1">{t.recouped}</div>
+                            <div className="text-3xl font-bold text-emerald-300">${totalRecouped.toFixed(0)}</div>
+                        </div>
+                        <div className="bg-white/10 rounded-xl p-4 border border-white/10">
+                            <div className="text-xs text-white/50 mb-1">{t.effective}</div>
+                            <div className={`text-3xl font-bold ${effectiveFee <= 0 ? 'text-blue-300' : 'text-orange-300'}`}>
+                                ${effectiveFee.toFixed(0)}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ── Benefits list ───────────────────────────────── */}
+                <div className="space-y-3">
+                    {card.benefits.map(benefit => {
+                        const u          = usage[benefit.id] || {};
+                        const isExpanded = expandedId === benefit.id;
+                        const isComplete = benefit.type === 'toggle'    ? u.completed :
+                                           benefit.type === 'annual'    ? (u.usedAmount || 0) >= benefit.totalValue :
+                                           benefit.type === 'semi-annual' ? (u.checkedPeriods?.length || 0) >= 2 :
+                                           benefit.type === 'quarterly'  ? (u.checkedPeriods?.length || 0) >= 4 : false;
+
+                        let progress = '';
+                        if (benefit.type === 'annual')        progress = `$${u.usedAmount || 0}`;
+                        else if (benefit.type === 'monthly' || benefit.type === 'monthly_uber') progress = `${u.checkedMonths?.length || 0}/12`;
+                        else if (benefit.type === 'semi-annual') progress = `${u.checkedPeriods?.length || 0}/2`;
+                        else if (benefit.type === 'quarterly')   progress = `${u.checkedPeriods?.length || 0}/4`;
+                        else if (benefit.type === 'toggle')   progress = u.completed
+                            ? (lang === 'zh' ? '已完成' : 'Done')
+                            : (lang === 'zh' ? '未完成' : 'Pending');
+
+                        return (
+                            <div key={benefit.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-shadow">
+                                <div className="p-4 flex items-center justify-between cursor-pointer select-none"
+                                    onClick={() => setExpandedId(isExpanded ? null : benefit.id)}>
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2.5 rounded-lg ${isComplete ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                                            <Icon name={benefit.type === 'monthly' || benefit.type === 'monthly_uber' || benefit.type === 'quarterly' ? 'calendar' : 'dollar-sign'} size={16}/>
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-slate-800 text-sm">{benefit.name[lang]}</h3>
+                                            <p className="text-xs text-slate-400 mt-0.5">{benefit.resetPeriod[lang]} · {t.total} ${benefit.totalValue}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className={`text-xs font-medium hidden sm:block ${isComplete ? 'text-emerald-500' : 'text-slate-400'}`}>{progress}</span>
+                                        <Icon name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} className="text-slate-300"/>
+                                    </div>
+                                </div>
+
+                                {isExpanded && (
+                                    <div className="bg-slate-50 border-t border-slate-100 p-4 space-y-3">
+
+                                        {/* Annual slider */}
+                                        {benefit.type === 'annual' && (
+                                            <div className="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200">
+                                                <input type="range" min="0" max={benefit.totalValue}
+                                                    value={u.usedAmount || 0}
+                                                    onChange={e => handleSlider(benefit.id, parseInt(e.target.value))}
+                                                    className="flex-1 h-2 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                                />
+                                                <span className="font-mono font-bold text-slate-700 w-14 text-right">${u.usedAmount || 0}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Toggle */}
+                                        {benefit.type === 'toggle' && (
+                                            <button onClick={() => toggleComplete(benefit.id)}
+                                                className={`w-full py-3 rounded-lg border font-medium text-sm transition-all ${
+                                                    u.completed
+                                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                                    : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'
+                                                }`}>
+                                                {u.completed ? t.toggleDone(benefit.totalValue) : t.toggleNotDone}
+                                            </button>
+                                        )}
+
+                                        {/* Monthly */}
+                                        {(benefit.type === 'monthly' || benefit.type === 'monthly_uber') && (
+                                            <div className="grid grid-cols-6 gap-1.5">
+                                                {Array.from({ length: 12 }).map((_, idx) => {
+                                                    const checked = u.checkedMonths?.includes(idx);
+                                                    return (
+                                                        <button key={idx} onClick={() => toggleMonth(benefit.id, idx)}
+                                                            className={`py-2 rounded border text-center transition-all ${
+                                                                checked
+                                                                ? 'bg-emerald-500 border-emerald-600 text-white'
+                                                                : 'bg-white border-slate-200 text-slate-400 hover:border-blue-300'
+                                                            }`}>
+                                                            <div className="text-xs font-medium">{t.monthLabel(idx + 1)}</div>
+                                                            {benefit.type === 'monthly_uber' && (
+                                                                <div className="text-[10px] opacity-80">${benefit.monthlyValues[idx]}</div>
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        {/* Quarterly */}
+                                        {benefit.type === 'quarterly' && (
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {[1, 2, 3, 4].map(q => {
+                                                    const checked = u.checkedPeriods?.includes(q);
+                                                    const label = [t.q1, t.q2, t.q3, t.q4][q - 1];
+                                                    return (
+                                                        <button key={q} onClick={() => togglePeriod(benefit.id, q)}
+                                                            className={`py-3 rounded-lg border text-xs font-medium transition-all ${
+                                                                checked
+                                                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                                                : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'
+                                                            }`}>
+                                                            {label}{checked && ' ✓'}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        {/* Semi-annual */}
+                                        {benefit.type === 'semi-annual' && (
+                                            <div className="flex gap-3">
+                                                {[1, 2].map(period => {
+                                                    const checked = u.checkedPeriods?.includes(period);
+                                                    return (
+                                                        <button key={period} onClick={() => togglePeriod(benefit.id, period)}
+                                                            className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-all ${
+                                                                checked
+                                                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                                                : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'
+                                                            }`}>
+                                                            {period === 1 ? t.firstHalf : t.secondHalf}
+                                                            {checked && ' ✓'}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        <p className="text-xs text-slate-400 flex items-center gap-1.5">
+                                            <Icon name="info" size={11}/> {benefit.description[lang]}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+                </>
+            )}
+
+            {/* ── Bottom bar ──────────────────────────────────────── */}
+            <div className="fixed bottom-0 left-0 right-0 bg-white/95 border-t border-slate-200 p-4 shadow-lg backdrop-blur-md">
+                <div className="max-w-3xl mx-auto flex items-center gap-3">
+                    <button onClick={resetData} disabled={!card}
+                        className="flex-1 py-2.5 rounded-xl border border-red-200 text-red-500 font-medium text-sm hover:bg-red-50 flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                        <Icon name="trash-2" size={14}/> {t.resetCard}
+                    </button>
+                    {/* Upload statement button */}
+                    <button onClick={() => fileInputRef.current?.click()} disabled={scanning}
+                        className="flex-1 py-2.5 rounded-xl border border-blue-200 text-blue-600 font-medium text-sm hover:bg-blue-50 flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
+                        {scanning
+                            ? <><Icon name="loader" size={14} className="spin"/> {scanProgress.total > 1 ? t.scanningOf(scanProgress.done, scanProgress.total) : t.scanning}</>
+                            : <><Icon name="upload" size={14}/> {t.uploadStatement}</>}
+                    </button>
+                    <input ref={fileInputRef} type="file" accept=".pdf" multiple className="hidden" onChange={handleFileChange}/>
+                    <div className="text-xs text-slate-400 text-center hidden sm:block" style={{minWidth:'72px'}}>
+                        {t.autoSave}<br/>{t.autoSaveLocal}
+                    </div>
+                </div>
+            </div>
+
+            {/* ── Bulk scan results modal ───────────────────────────── */}
+            {scanResults && (
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+                    onClick={(e) => { if (e.target === e.currentTarget) handleScanClose(); }}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col fade-in">
+
+                        {/* Modal header */}
+                        <div className="flex items-center justify-between p-5 border-b border-slate-100">
+                            <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                                <Icon name="sparkles" size={18} className="text-blue-500"/>
+                                {t.bulkScanTitle(scanResults.length)}
+                            </h2>
+                            <button onClick={handleScanClose}
+                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100">
+                                <Icon name="x" size={18}/>
+                            </button>
+                        </div>
+
+                        {/* Modal body — one card per PDF */}
+                        <div className="p-4 overflow-y-auto space-y-3">
+                            {scanResults.map((result, idx) => {
+                                const newCount = result.applied?.filter(a => a.was_new).length || 0;
+                                const cardCfg  = result.card_id ? CARDS[result.card_id] : null;
+                                return (
+                                    <div key={idx} className="border border-slate-200 rounded-xl overflow-hidden">
+                                        {/* File name bar */}
+                                        <div className="bg-slate-50 px-3 py-2 flex items-center justify-between gap-2">
+                                            <span className="text-xs text-slate-400 truncate flex items-center gap-1">
+                                                <Icon name="upload" size={11}/> {result._filename}
+                                            </span>
+                                            {newCount > 0 && (
+                                                <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
+                                                    +{newCount} {t.newlyApplied}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="p-3 space-y-2.5">
+                                            {result.error ? (
+                                                <div className="flex items-center gap-2 text-red-500 text-sm">
+                                                    <Icon name="x-circle" size={14}/> {result.error}
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {/* Card + User */}
+                                                    <div className="flex gap-2">
+                                                        <div className="flex-1 bg-slate-50 rounded-lg p-2">
+                                                            <div className="text-xs text-slate-400 mb-0.5">{t.detectedCard}</div>
+                                                            <div className="text-sm font-semibold text-slate-700">
+                                                                {cardCfg ? cardCfg.name[lang] : <span className="text-red-400 text-xs">{t.cardNotDetected}</span>}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex-1 bg-slate-50 rounded-lg p-2">
+                                                            <div className="text-xs text-slate-400 mb-0.5">{t.detectedUser}</div>
+                                                            <div className={`text-sm font-semibold ${result.user ? 'text-slate-700' : 'text-orange-500'}`}>
+                                                                {result.user ? result.user.name : (result.cardholder || '—')}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Unmatched user — offer to create */}
+                                                    {!result.user && result.card_id && result.cardholder && (
+                                                        <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 space-y-2">
+                                                            <p className="text-xs text-orange-700 flex items-center gap-1">
+                                                                <Icon name="info" size={12} className="flex-shrink-0"/>
+                                                                {t.newUserHint}: <strong className="ml-0.5">{result.cardholder}</strong>
+                                                            </p>
+                                                            <button onClick={() => createUserAndApply(idx)}
+                                                                className="w-full py-1.5 text-xs font-medium rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors flex items-center justify-center gap-1.5">
+                                                                <Icon name="user-plus" size={12}/> {t.createUserAndApply}
+                                                            </button>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Benefits */}
+                                                    {result.applied && result.applied.length > 0 && (
+                                                        <div className="space-y-1.5">
+                                                            {result.applied.map((item, i) => {
+                                                                const bCfg  = cardCfg?.benefits.find(b => b.id === item.benefit_id);
+                                                                const bName = bCfg ? bCfg.name[lang] : item.benefit_id;
+                                                                const monthStr = item.month != null
+                                                                    ? `${t.monthNames[item.month]}${item.year ? ' ' + item.year : ''}`
+                                                                    : (item.year ? String(item.year) : null);
+                                                                return (
+                                                                    <div key={i} className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs ${
+                                                                        item.was_new ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-50 text-slate-500'
+                                                                    }`}>
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <Icon name={item.was_new ? 'check-circle' : 'info'} size={12}
+                                                                                className={item.was_new ? 'text-emerald-500' : 'text-slate-400'}/>
+                                                                            <span>{bName}</span>
+                                                                            {item.amount > 0 && <span className="text-slate-400">${item.amount.toFixed(2)}</span>}
+                                                                            {monthStr && <span className="text-slate-400">· {monthStr}</span>}
+                                                                        </div>
+                                                                        <span className={`font-medium px-1.5 py-0.5 rounded-full text-[10px] flex-shrink-0 ml-2 ${
+                                                                            item.was_new ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'
+                                                                        }`}>
+                                                                            {item.was_new ? t.newlyApplied : t.alreadyRecorded}
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                    {result.applied?.length === 0 && result.user && (
+                                                        <p className="text-xs text-slate-400 text-center py-1">{t.noBenefitsFound}</p>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Modal footer */}
+                        <div className="p-4 border-t border-slate-100">
+                            {scanResults.some(r => r.applied?.some(a => a.was_new)) && (
+                                <div className="text-xs text-emerald-600 text-center mb-2 font-medium">
+                                    ✓ {t.scanSuccess(scanResults.reduce((sum, r) => sum + (r.applied?.filter(a => a.was_new).length || 0), 0))}
+                                </div>
+                            )}
+                            <button onClick={handleScanClose}
+                                className="w-full py-2.5 rounded-xl bg-slate-900 text-white font-medium text-sm hover:bg-slate-700 transition-colors">
+                                {t.close}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Add Card from URL modal ───────────────────────────── */}
+            {addCardStep !== 'closed' && (
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+                    onClick={(e) => { if (e.target === e.currentTarget && addCardStep !== 'scraping') setAddCardStep('closed'); }}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col fade-in"
+                        style={{maxHeight: '90vh'}}>
+
+                        {/* URL input step */}
+                        {(addCardStep === 'url' || addCardStep === 'scraping') && (
+                            <>
+                                <div className="flex items-center justify-between p-5 border-b border-slate-100">
+                                    <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                                        <Icon name="link" size={16} className="text-blue-500"/>
+                                        {t.addCustomCard}
+                                    </h2>
+                                    <button onClick={() => setAddCardStep('closed')} disabled={addCardStep === 'scraping'}
+                                        className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 disabled:opacity-40">
+                                        <Icon name="x" size={18}/>
+                                    </button>
+                                </div>
+                                <div className="p-6 space-y-4">
+                                    <p className="text-sm text-slate-500">
+                                        {lang === 'zh'
+                                            ? '输入信用卡介绍页的网址，系统将自动抓取福利信息，您可以在确认后保存。'
+                                            : 'Enter a credit card review page URL. The app will scrape the benefits info for you to review before saving.'}
+                                    </p>
+                                    <input type="url" value={scrapeUrl}
+                                        onChange={e => setScrapeUrl(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter' && addCardStep === 'url') handleScrapeCard(); }}
+                                        placeholder={t.urlPlaceholder}
+                                        disabled={addCardStep === 'scraping'}
+                                        className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-400 disabled:bg-slate-50"/>
+                                    {scrapeUrlError && (
+                                        <div className="flex items-center gap-2 text-red-500 text-sm bg-red-50 rounded-xl p-3">
+                                            <Icon name="x-circle" size={14}/> {scrapeUrlError}
+                                        </div>
+                                    )}
+                                    <div className="flex gap-3">
+                                        <button onClick={() => setAddCardStep('closed')} disabled={addCardStep === 'scraping'}
+                                            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 font-medium disabled:opacity-40 transition-colors">
+                                            {t.close}
+                                        </button>
+                                        <button onClick={handleScrapeCard} disabled={addCardStep === 'scraping' || !scrapeUrl.trim()}
+                                            className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+                                            {addCardStep === 'scraping'
+                                                ? <><Icon name="loader" size={14} className="spin"/> {t.analyzingCard}</>
+                                                : <><Icon name="sparkles" size={14}/> {t.analyzeCard}</>}
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Editing step */}
+                        {addCardStep === 'editing' && cardDraft && (
+                            <CardEditor
+                                draft={cardDraft}
+                                onChange={setCardDraft}
+                                onSave={handleSaveCard}
+                                onCancel={() => setAddCardStep('closed')}
+                                lang={lang}
+                                t={t}
+                            />
+                        )}
+                    </div>
+                </div>
+            )}
+
+        </div>
+    );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
