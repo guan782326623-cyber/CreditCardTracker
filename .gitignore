@@ -39,3 +39,11 @@ desktop.ini
 
 # Logs
 *.log
+
+# AI workspace inbox folders — routed content is not tracked (only .gitkeep stays)
+_INBOX_RAW/*
+!_INBOX_RAW/.gitkeep
+_INBOX_PROCESSED/*
+!_INBOX_PROCESSED/.gitkeep
+_INBOX_IGNORED/*
+!_INBOX_IGNORED/.gitkeep
