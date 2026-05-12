@@ -3,6 +3,10 @@ dist/
 build/
 *.spec.bak
 
+# Release artifacts (distribute via GitHub Releases, not git)
+*.exe
+*.zip
+
 # Python
 __pycache__/
 *.pyc
@@ -14,6 +18,7 @@ __pycache__/
 
 # PyInstaller temp
 AmexTrackerBuild/
+CardTrackerBuild/
 
 # Database (user personal data — do NOT commit)
 *.db
@@ -25,9 +30,10 @@ AmexTrackerBuild/
 Thumbs.db
 desktop.ini
 
-# IDE
+# IDE / tooling
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 

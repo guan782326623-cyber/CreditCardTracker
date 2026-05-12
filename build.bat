@@ -6,7 +6,7 @@ setlocal
 cd /d "%~dp0"
 
 echo ============================================================
-echo   Amex Tracker — 一键打包脚本
+echo   Card Tracker — 一键打包脚本
 echo ============================================================
 echo.
 
@@ -40,7 +40,7 @@ echo [2/3] 用 PyInstaller 打包（可能需要几分钟）...
 if exist dist\CardTracker rmdir /s /q dist\CardTracker
 
 :: 把临时构建目录放到 %TEMP%，避免 OneDrive 锁文件
-set BUILDTMP=%TEMP%\AmexTrackerBuild
+set BUILDTMP=%TEMP%\CardTrackerBuild
 if exist "%BUILDTMP%" rmdir /s /q "%BUILDTMP%"
 
 :: 用 python -m PyInstaller 代替直接调用（更可靠）

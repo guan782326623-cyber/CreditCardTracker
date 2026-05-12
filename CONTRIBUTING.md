@@ -83,7 +83,7 @@ your_card_id: {
 
 - 修改 `index.html` 或 `server.py` 后需要重新打包才能在 EXE 中生效
 - 前端使用 React (Babel CDN，无构建步骤) + Tailwind CSS
-- 后端使用 Flask + SQLite，数据存储在用户 `AppData/Local/AmexTracker/` 目录
+- 后端使用 Flask + SQLite，数据存储在用户 `AppData/Local/AmexTracker/` 目录（沿用旧目录名以兼容已安装的版本）
 
 ---
 

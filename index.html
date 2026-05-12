@@ -148,6 +148,11 @@ const T = {
         bulkScanTitle: (n) => `批量账单扫描结果（${n} 份）`,
         newUserHint: '账单中检测到持卡人',
         createUserAndApply: '创建用户并记录福利',
+        bindAccountHint: '已找到持卡人，但无法识别卡片——请选择此账号对应的卡片（仅需绑定一次）',
+        accountLast4: '账号末四位',
+        selectCardType: '选择卡片类型…',
+        bindCard: '绑定此账号',
+        bindSuccess: '绑定成功！下次上传将自动识别',
         scanningOf: (done, total) => `正在分析账单 ${done}/${total}…`,
         addCustomCard:    '从网址添加新卡',
         enterCardUrl:     '输入信用卡介绍页网址',
@@ -239,6 +244,11 @@ const T = {
         bulkScanTitle: (n) => `Batch Scan Results (${n} file${n > 1 ? 's' : ''})`,
         newUserHint: 'Cardholder detected in statement',
         createUserAndApply: 'Create user & apply benefits',
+        bindAccountHint: 'User found but card type unknown — select the card for this account (one-time setup)',
+        accountLast4: 'Account last 4',
+        selectCardType: 'Select card type…',
+        bindCard: 'Bind account',
+        bindSuccess: 'Bound! Future uploads will auto-detect',
         scanningOf: (done, total) => `Scanning ${done}/${total}…`,
         addCustomCard:    'Add Card from URL',
         enterCardUrl:     'Enter credit card review page URL',
@@ -518,7 +528,7 @@ const CARDS = {
     },
     chase_marriott_premier_plus: {
         id: 'chase_marriott_premier_plus',
-        name: { zh: 'Chase Marriott Premier Plus', en: 'Chase Marriott Bonvoy Premier Plus' },
+        name: { zh: 'Chase Marriott Bonvoy Boundless', en: 'Chase Marriott Bonvoy Boundless' },
         annualFee: 95,
         headerBg: 'bg-red-800',
         benefits: [
@@ -530,6 +540,13 @@ const CARDS = {
                 description: { zh: '每年一张免费住宿券，可兑换 35,000 积分以下的万豪酒店', en: 'One free night certificate/year, redeemable at Marriott properties up to 35,000 points' },
             },
         ],
+    },
+    chase_amazon_prime: {
+        id: 'chase_amazon_prime',
+        name: { zh: 'Chase Amazon Prime Visa', en: 'Chase Amazon Prime Visa' },
+        annualFee: 0,
+        headerBg: 'bg-orange-600',
+        benefits: [],
     },
     amex_gold: {
         id: 'amex_gold',
@@ -816,6 +833,7 @@ const App = () => {
     const [scanning, setScanning]           = useState(false);
     const [scanProgress, setScanProgress]   = useState({done: 0, total: 0});
     const [scanResults, setScanResults]     = useState(null);  // null = closed, array = open
+    const [bindSelections, setBindSelections] = useState({});  // idx -> card_id selected for binding
 
     // Custom card add-from-URL flow
     const [customCardIds, setCustomCardIds] = useState([]);   // IDs of user-added custom cards
@@ -1092,6 +1110,22 @@ const App = () => {
         }
     };
 
+    // ── Bind account last4 to card type ───────────────────────────
+    const bindAccountCard = async (idx) => {
+        const result = scanResults[idx];
+        const cardId = bindSelections[idx];
+        if (!cardId || !result.last4) return;
+        await fetch(`${API}/account-cards`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ last4: result.last4, card_id: cardId }),
+        });
+        // Update result in-place to show bound card
+        setScanResults(prev => prev.map((r, i) =>
+            i === idx ? { ...r, error: t.bindSuccess, card_id: cardId } : r
+        ));
+    };
+
     // ── Custom card: scrape URL ────────────────────────────────────
     const handleScrapeCard = async () => {
         const url = scrapeUrl.trim();
@@ -1187,6 +1221,7 @@ const App = () => {
     const handleScanClose = () => {
         const results = scanResults;
         setScanResults(null);
+        setBindSelections({});
         if (results?.some(r => r.applied?.some(a => a.was_new))) {
             const first = results.find(r => r.applied?.some(a => a.was_new));
             if (first?.user) {
@@ -1647,7 +1682,37 @@ const App = () => {
                                         </div>
 
                                         <div className="p-3 space-y-2.5">
-                                            {result.error ? (
+                                            {result.error === 'unidentified_card' ? (
+                                                /* Card unknown but user found — show bind UI */
+                                                <div className="space-y-2">
+                                                    <div className="flex gap-2">
+                                                        <div className="flex-1 bg-slate-50 rounded-lg p-2">
+                                                            <div className="text-xs text-slate-400 mb-0.5">{t.detectedUser}</div>
+                                                            <div className="text-sm font-semibold text-slate-700">{result.user?.name || result.cardholder || '—'}</div>
+                                                        </div>
+                                                        <div className="flex-1 bg-orange-50 rounded-lg p-2">
+                                                            <div className="text-xs text-slate-400 mb-0.5">{t.accountLast4}</div>
+                                                            <div className="text-sm font-semibold text-slate-700">{result.last4 || '—'}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 space-y-2">
+                                                        <p className="text-xs text-orange-700">{t.bindAccountHint}</p>
+                                                        <select value={bindSelections[idx] || ''}
+                                                            onChange={e => setBindSelections(prev => ({...prev, [idx]: e.target.value}))}
+                                                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+                                                            <option value="">{t.selectCardType}</option>
+                                                            {ALL_CARD_IDS.map(cid => (
+                                                                <option key={cid} value={cid}>{CARDS[cid]?.name[lang] || cid}</option>
+                                                            ))}
+                                                        </select>
+                                                        <button onClick={() => bindAccountCard(idx)}
+                                                            disabled={!bindSelections[idx]}
+                                                            className="w-full py-1.5 text-xs font-medium rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40 transition-colors">
+                                                            {t.bindCard}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : result.error ? (
                                                 <div className="flex items-center gap-2 text-red-500 text-sm">
                                                     <Icon name="x-circle" size={14}/> {result.error}
                                                 </div>

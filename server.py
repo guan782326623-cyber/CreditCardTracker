@@ -118,6 +118,13 @@ def init_db():
         )
     ''')
 
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS account_cards (
+            last4   TEXT PRIMARY KEY,
+            card_id TEXT NOT NULL
+        )
+    ''')
+
     existing_users = conn.execute("SELECT id FROM users").fetchall()
     for row in existing_users:
         uid = row['id']
@@ -187,6 +194,7 @@ BENEFIT_KEYWORDS = {
         'resy':    ['RESY CREDIT', 'RESY STMT', 'RESY STATEMENT CREDIT'],
         'hotel':   ['HOTEL COLLECTION CREDIT', 'THC CREDIT'],
     },
+    'chase_amazon_prime': {},
 }
 
 # Benefit type per benefit_id per card (mirrors CARDS config in frontend)
@@ -221,15 +229,27 @@ BENEFIT_TYPES = {
         'dining': 'monthly', 'uber': 'monthly', 'dunkin': 'monthly',
         'resy': 'semi-annual', 'hotel': 'annual',
     },
+    'chase_amazon_prime': {},
 }
 
 CARD_TYPE_KEYWORDS = {
     'amex_platinum':                    ['PLATINUM CARD', 'THE PLATINUM', 'PLATINUM DELTA', 'PLATINUM DELTA SKYMILES'],
     'amex_gold':                        ['GOLD CARD', 'AMERICAN EXPRESS GOLD', 'AMEX GOLD', 'PREFERRED REWARDS GOLD'],
     'chase_sapphire_reserve_business':  ['SAPPHIRE RESERVE BUSINESS', 'CSR BUSINESS', 'CHASE SAPPHIRE RESERVE BUSINESS'],
-    'chase_sapphire_reserve':           ['SAPPHIRE RESERVE', 'CHASE SAPPHIRE RESERVE'],
-    'chase_sapphire_preferred':         ['SAPPHIRE PREFERRED', 'CHASE SAPPHIRE PREFERRED'],
-    'chase_marriott_premier_plus':      ['MARRIOTT BONVOY PREMIER PLUS', 'MARRIOTT PREMIER PLUS', 'BONVOY PREMIER PLUS'],
+    # Note: Chase PDFs often render card name as image logo — match on extractable text instead
+    'chase_sapphire_reserve':           ['SAPPHIRE RESERVE', 'CHASE SAPPHIRE RESERVE',
+                                         'TRAVEL CREDIT $300',           # CSR $300 annual travel credit (transaction line)
+                                         'STUBHUB CREDIT',               # CSR StubHub benefit (unique to CSR)
+                                         '8X POINTS ON CHASE TRAVEL',    # points summary format A
+                                         '8X ON CHASE TRAVEL',           # points summary format B
+                                         '+ 8X POINTS', '+ 8X ON'],
+    'chase_sapphire_preferred':         ['SAPPHIRE PREFERRED', 'CHASE SAPPHIRE PREFERRED',
+                                         'TRAVEL CREDIT $50',            # CSP $50 hotel credit
+                                         '5X POINTS ON CHASE TRAVEL', '5X ON CHASE TRAVEL'],
+    'chase_marriott_premier_plus':      ['MARRIOTT BONVOY PREMIER PLUS', 'MARRIOTT PREMIER PLUS', 'BONVOY PREMIER PLUS',
+                                         'MARRIOTT BONVOY BOUNDLESS', 'BONVOY BOUNDLESS'],
+    'chase_amazon_prime':               ['PRIME VISA', 'AMAZON PRIME VISA', 'YOUR PRIME VISA POINTS',
+                                         'CHASE.COM/AMAZON', 'AMAZON REWARDS VISA'],
 }
 
 
@@ -243,11 +263,38 @@ def extract_pdf_text(file_stream):
                 t = page.extract_text()
                 if t:
                     text_parts.append(t)
-        return '\n'.join(text_parts)
+        return normalize_pdf_text('\n'.join(text_parts))
     except ImportError:
         raise RuntimeError('pdfplumber not installed')
     except Exception as e:
         raise RuntimeError(f'PDF read error: {e}')
+
+
+def normalize_pdf_text(text):
+    """
+    Fix doubled-character text that pdfplumber sometimes produces from Chase PDFs.
+    In these PDFs each character appears twice per word (e.g. 'YYOOUURR' instead of 'YOUR').
+    Works word-by-word so that spaces between words don't break detection.
+    """
+    def is_doubled_word(w):
+        """A word is 'doubled' if it has even length >= 4 and every consecutive pair of chars matches."""
+        if len(w) < 4 or len(w) % 2 != 0:
+            return False
+        return all(w[i] == w[i + 1] for i in range(0, len(w) - 1, 2))
+
+    fixed = []
+    for line in text.split('\n'):
+        words = line.split()
+        if len(words) >= 2:
+            doubled_count = sum(1 for w in words if is_doubled_word(w))
+            if doubled_count / len(words) >= 0.5:
+                fixed.append(' '.join(w[::2] if is_doubled_word(w) else w for w in words))
+                continue
+        elif len(words) == 1 and is_doubled_word(words[0]):
+            fixed.append(words[0][::2])
+            continue
+        fixed.append(line)
+    return '\n'.join(fixed)
 
 
 def detect_card_type(text):
@@ -260,28 +307,60 @@ def detect_card_type(text):
     return None
 
 
-def detect_cardholder(text):
+def find_user_in_text(text, users):
     """
-    Try to extract the primary cardholder name from statement text.
-    Looks for an ALL-CAPS 2-4 word name near the top of the document.
+    Search for any registered user's name directly in the statement text.
+    Handles: exact match, reversed order (Last First), and middle name/initial variations.
+    Returns the matched user dict {'id', 'name'} or None.
     """
-    lines = text.split('\n')[:40]  # search only the first 40 lines
-    name_re = re.compile(r'^([A-Z][A-Z\s\-\']{4,40})$')
-    skip_words = {'AMERICAN EXPRESS', 'STATEMENT', 'ACCOUNT', 'CARD', 'MEMBER',
-                  'PLATINUM', 'GOLD', 'RESERVE', 'SAPPHIRE', 'CHASE', 'VISA',
-                  'MASTERCARD', 'CREDIT', 'DEBIT', 'BALANCE', 'PAGE', 'DATE'}
-    for line in lines:
-        stripped = line.strip()
-        m = name_re.match(stripped)
-        if m:
-            candidate = m.group(1).strip()
-            # Must have at least 2 words, no single long word
-            words = candidate.split()
-            if len(words) < 2 or len(words) > 4:
-                continue
-            if any(skip in candidate for skip in skip_words):
-                continue
-            return candidate
+    upper_text = text.upper()
+    for u in users:
+        name = u['name'].upper().strip()
+        words = name.split()
+
+        # 1. Exact full name match
+        if name in upper_text:
+            return {'id': u['id'], 'name': u['name']}
+
+        if len(words) >= 2:
+            # 2. Reversed word order (e.g. "GUAN YU" for "YU GUAN")
+            reversed_name = ' '.join(reversed(words))
+            if reversed_name in upper_text:
+                return {'id': u['id'], 'name': u['name']}
+
+            # 3. First + last with optional middle name/initial in between
+            #    e.g. "WILLIAM WAAS" matches "WILLIAM R WAAS" or "WILLIAM ROBERT WAAS"
+            first = re.escape(words[0])
+            last = re.escape(words[-1])
+            pattern = rf'\b{first}\s+(?:\w{{1,20}}\s+){{0,2}}{last}\b'
+            if re.search(pattern, upper_text):
+                return {'id': u['id'], 'name': u['name']}
+
+            # 4. Last, First format (e.g. "WAAS/WILLIAM" or "WAAS, WILLIAM")
+            last_first = rf'\b{last}[/,\s]+{first}\b'
+            if re.search(last_first, upper_text):
+                return {'id': u['id'], 'name': u['name']}
+
+    return None
+
+
+def extract_account_last4(text):
+    """
+    Extract the last 4 digits of the account number from statement text.
+    Handles Chase format (XXXX XXXX XXXX 4679) and Amex format (Account Ending 0-41001).
+    """
+    # Chase: "XXXX XXXX XXXX 4679" or "Account Number: XXXX XXXX XXXX 4679"
+    m = re.search(r'XXXX[\s\-]+XXXX[\s\-]+XXXX[\s\-]+(\d{4})\b', text, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    # Amex: "Account Ending 0-41001" → last 4 of the suffix
+    m = re.search(r'Account\s+Ending\s+[\w\-]*?(\d{4})\b', text, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    # Generic fallback: "Account Number: ... XXXX" near end of number
+    m = re.search(r'Account\s+(?:Number|#)\s*:?\s*[\dXx\s\-]+?(\d{4})\b', text, re.IGNORECASE)
+    if m:
+        return m.group(1)
     return None
 
 
@@ -599,32 +678,54 @@ def scan_statement():
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 400
 
-    # Detect card and cardholder
-    card_id    = detect_card_type(text)
-    cardholder = detect_cardholder(text)
+    # Extract account last 4 digits for mapping lookup
+    last4 = extract_account_last4(text)
 
-    # Try to match a user by name
-    matched_user = None
     conn = get_db()
-    all_users = conn.execute("SELECT id, name FROM users").fetchall()
-    if cardholder:
-        ch_up = cardholder.upper()
-        for u in all_users:
-            u_up = u['name'].upper()
-            # Match if either name contains the other
-            if ch_up in u_up or u_up in ch_up:
-                matched_user = {'id': u['id'], 'name': u['name']}
-                break
 
+    # Step 1: Try keyword-based card detection
+    card_id = detect_card_type(text)
+
+    # Step 2: If keyword detection failed, check account_cards mapping
+    if not card_id and last4:
+        row = conn.execute("SELECT card_id FROM account_cards WHERE last4=?", (last4,)).fetchone()
+        if row:
+            card_id = row['card_id']
+
+    # Step 3: If keyword detection succeeded, auto-save the mapping for future use
+    if card_id and last4:
+        conn.execute("INSERT OR REPLACE INTO account_cards (last4, card_id) VALUES (?, ?)",
+                     (last4, card_id))
+        conn.commit()
+
+    # Find which registered user this statement belongs to by searching their name in the text
+    all_users = conn.execute("SELECT id, name FROM users").fetchall()
+    matched_user = find_user_in_text(text, all_users)
+
+    # No name found → not this user's statement
+    if not matched_user:
+        conn.close()
+        return jsonify({
+            'card_id':    card_id,
+            'cardholder': None,
+            'user':       None,
+            'last4':      last4,
+            'detected':   [],
+            'applied':    [],
+            'error':      '账单中未找到已注册用户的姓名，请确认账单归属',
+        })
+
+    # Name found but card type still unknown → prompt user to bind this account number
     if not card_id:
         conn.close()
         return jsonify({
             'card_id':    None,
-            'cardholder': cardholder,
+            'cardholder': matched_user['name'],
             'user':       matched_user,
+            'last4':      last4,
             'detected':   [],
             'applied':    [],
-            'error':      'Could not identify card type from statement',
+            'error':      'unidentified_card',
         })
 
     # Detect month and year from statement closing date (fallback to now)
@@ -654,13 +755,48 @@ def scan_statement():
 
     return jsonify({
         'card_id':    card_id,
-        'cardholder': cardholder,
+        'cardholder': matched_user['name'],
         'user':       matched_user,
+        'last4':      last4,
         'stmt_month': stmt_month,
         'stmt_year':  stmt_year,
         'detected':   detected,
         'applied':    applied,
     })
+
+
+# ── Account → Card mapping ─────────────────────────────────────────────────────
+
+@app.route('/api/account-cards', methods=['GET'])
+def list_account_cards():
+    conn = get_db()
+    rows = conn.execute("SELECT last4, card_id FROM account_cards ORDER BY last4").fetchall()
+    conn.close()
+    return jsonify([{'last4': r['last4'], 'card_id': r['card_id']} for r in rows])
+
+
+@app.route('/api/account-cards', methods=['POST'])
+def save_account_card():
+    data = request.get_json(force=True) or {}
+    last4 = (data.get('last4') or '').strip()
+    card_id = (data.get('card_id') or '').strip()
+    if not last4 or not card_id:
+        return jsonify({'error': 'last4 and card_id required'}), 400
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO account_cards (last4, card_id) VALUES (?, ?)",
+                 (last4, card_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/account-cards/<last4>', methods=['DELETE'])
+def delete_account_card(last4):
+    conn = get_db()
+    conn.execute("DELETE FROM account_cards WHERE last4=?", (last4,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
 
 
 # ── Custom card storage ────────────────────────────────────────────────────────
